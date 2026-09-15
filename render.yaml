@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: underwriting-api
+    runtime: python
+    plan: free
+    healthCheckPath: /health
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.4
+      - key: DATABASE_URL
+        sync: false
+      # No default here on purpose - must be set to the real Vercel domain(s) in the Render
+      # dashboard (comma-separated for prod + preview). app/main.py refuses to start CORS
+      # with a wildcard fallback, so this can't be silently left wide open.
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # public prod deployment doesn't need /docs, /redoc, or /openapi.json exposed - see
+      # app/main.py
+      - key: EXPOSE_API_DOCS
+        value: "false"
+      # shared secret for the admin endpoints (app/admin.py) - set by hand in the Render
+      # dashboard to its own generated value, never the same one used locally
+      - key: ADMIN_API_KEY
+        sync: false

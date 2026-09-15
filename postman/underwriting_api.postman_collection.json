@@ -1,0 +1,1680 @@
+{
+  "info": {
+    "_postman_id": "9325e35c-028a-4dc3-a499-1e63a6379f0a",
+    "name": "Underwriting API",
+    "description": "Rules-engine underwriting API - public quote flow (products, quotes, answers, evaluation) plus the admin catalog endpoints (create products, questions, rules). See underwritting_api/README.md 'Testing with Postman' for how to run this.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('reports ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Happy path",
+      "item": [
+        {
+          "name": "List Products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/products",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('is a non-empty array', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.be.an('array');",
+                  "  pm.expect(body.length).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Product Questions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/products/{{product_code}}/questions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products",
+                "{{product_code}}",
+                "questions"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('never leaks expected_answer', () => {",
+                  "  const body = pm.response.json();",
+                  "  body.forEach((q) => pm.expect(q).to.not.have.property('expected_answer'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Quote",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_code\": \"{{product_code}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.environment.set('quote_id', body.quote_id);",
+                  "pm.environment.set('access_token', body.access_token);",
+                  "pm.test('access_token looks like a UUID', () => {",
+                  "  pm.expect(body.access_token).to.match(/^[0-9a-f-]{36}$/i);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Submit Full Answer Batch (LIFE_SIMPLE)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Quote-Token",
+                "value": "{{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes/{{quote_id}}/answers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes",
+                "{{quote_id}}",
+                "answers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": [\n    {\n      \"question_code\": \"Q_SMOKER\",\n      \"answer_text\": \"false\"\n    },\n    {\n      \"question_code\": \"Q_CANCER\",\n      \"answer_text\": \"false\"\n    },\n    {\n      \"question_code\": \"Q_BMI\",\n      \"answer_text\": \"22\"\n    },\n    {\n      \"question_code\": \"Q_HOSP\",\n      \"answer_text\": \"false\"\n    },\n    {\n      \"question_code\": \"Q_SPORTS\",\n      \"answer_text\": \"false\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resubmit One Answer (proves upsert)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Quote-Token",
+                "value": "{{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes/{{quote_id}}/answers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes",
+                "{{quote_id}}",
+                "answers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": [\n    {\n      \"question_code\": \"Q_SPORTS\",\n      \"answer_text\": \"true\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('answer_text corrected, not duplicated', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.answers).to.have.lengthOf(1);",
+                  "  pm.expect(body.answers[0].answer_text).to.eql('true');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Evaluate - Model A (full)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Quote-Token",
+                "value": "{{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes/{{quote_id}}/evaluate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes",
+                "{{quote_id}}",
+                "evaluate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"strategy\": \"full\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('increase_premium (smoker/sports both false except sports just set true)', () => {",
+                  "  pm.expect(pm.response.json().outcome).to.eql('increase_premium');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Evaluate - Model B (short_circuit)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Quote-Token",
+                "value": "{{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes/{{quote_id}}/evaluate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes",
+                "{{quote_id}}",
+                "evaluate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"strategy\": \"short_circuit\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('history keeps every run, not just the latest', () => {",
+                  "  pm.expect(pm.response.json().strategy).to.eql('short_circuit');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Error paths",
+      "item": [
+        {
+          "name": "Unknown Product Code (Create Quote) -> 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_code\": \"BOGUS_PRODUCT\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown Quote Id (Submit Answers) -> 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Quote-Token",
+                "value": "00000000-0000-0000-0000-000000000000",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes/999999/answers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes",
+                "999999",
+                "answers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": [\n    {\n      \"question_code\": \"Q_SMOKER\",\n      \"answer_text\": \"true\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wrong Token (Submit Answers) -> same 404 as unknown quote_id",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Quote-Token",
+                "value": "00000000-0000-0000-0000-000000000000",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes/{{quote_id}}/answers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes",
+                "{{quote_id}}",
+                "answers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": [\n    {\n      \"question_code\": \"Q_SMOKER\",\n      \"answer_text\": \"true\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('no oracle - same message shape as a truly unknown quote_id', () => {",
+                  "  pm.expect(pm.response.json().detail).to.eql(`Unknown quote_id: ${pm.environment.get('quote_id')}`);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown Question Code (Submit Answers) -> 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Quote-Token",
+                "value": "{{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes/{{quote_id}}/answers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes",
+                "{{quote_id}}",
+                "answers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": [\n    {\n      \"question_code\": \"Q_DOES_NOT_EXIST\",\n      \"answer_text\": \"x\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid answer_text For Type -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Quote-Token",
+                "value": "{{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes/{{quote_id}}/answers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes",
+                "{{quote_id}}",
+                "answers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": [\n    {\n      \"question_code\": \"Q_SMOKER\",\n      \"answer_text\": \"maybe\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 422', () => pm.response.to.have.status(422));",
+                  "pm.test('trigger message mentions boolean', () => {",
+                  "  pm.expect(pm.response.json().detail).to.include('not a valid boolean');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Empty Answers Array -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Quote-Token",
+                "value": "{{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes/{{quote_id}}/answers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes",
+                "{{quote_id}}",
+                "answers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mixed Batch Rolls Back Atomically -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Quote-Token",
+                "value": "{{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes/{{quote_id}}/answers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes",
+                "{{quote_id}}",
+                "answers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": [\n    {\n      \"question_code\": \"Q_BMI\",\n      \"answer_text\": \"30\"\n    },\n    {\n      \"question_code\": \"Q_HOSP\",\n      \"answer_text\": \"maybe\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 422 (whole batch rejected, not just the bad row)', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown Quote Id (Evaluate) -> 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Quote-Token",
+                "value": "00000000-0000-0000-0000-000000000000",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes/999999/evaluate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes",
+                "999999",
+                "evaluate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"strategy\": \"full\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wrong Token (Evaluate) -> same 404 as unknown quote_id",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Quote-Token",
+                "value": "00000000-0000-0000-0000-000000000000",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes/{{quote_id}}/evaluate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes",
+                "{{quote_id}}",
+                "evaluate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"strategy\": \"full\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid strategy Value -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Quote-Token",
+                "value": "{{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes/{{quote_id}}/evaluate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes",
+                "{{quote_id}}",
+                "evaluate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"strategy\": \"not_a_real_strategy\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Admin - Happy path",
+      "item": [
+        {
+          "name": "Create Product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Admin-Key",
+                "value": "{{admin_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{admin_product_code}}\",\n  \"name\": \"Postman Smoke Test Product\",\n  \"description\": \"created by the Postman collection\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// fresh unique code every run, so this folder is safely rerunnable;",
+                  "// the 409 test in Error paths deliberately reuses this same value.",
+                  "pm.environment.set('admin_product_code', 'PM_TEST_' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('echoes the created code', () => {",
+                  "  pm.expect(pm.response.json().code).to.eql(pm.environment.get('admin_product_code'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add Question",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Admin-Key",
+                "value": "{{admin_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products/{{admin_product_code}}/questions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products",
+                "{{admin_product_code}}",
+                "questions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question_code\": \"Q_PM_ADMIN_FLAG\",\n  \"text\": \"Postman admin test flag?\",\n  \"answer_type\": \"boolean\",\n  \"sequence\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('linked with the requested sequence', () => {",
+                  "  pm.expect(pm.response.json().sequence).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add Rule",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Admin-Key",
+                "value": "{{admin_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products/{{admin_product_code}}/rules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products",
+                "{{admin_product_code}}",
+                "rules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Flag set\",\n  \"outcome\": \"decline\",\n  \"stop_evaluation\": true,\n  \"conditions\": [\n    {\n      \"question_code\": \"Q_PM_ADMIN_FLAG\",\n      \"operator\": \"=\",\n      \"value\": \"true\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('condition echoed back', () => {",
+                  "  pm.expect(pm.response.json().conditions).to.have.lengthOf(1);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify Question Shows Up On The Product",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/products/{{admin_product_code}}/questions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products",
+                "{{admin_product_code}}",
+                "questions"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('the question just added is there', () => {",
+                  "  const codes = pm.response.json().map((q) => q.question_code);",
+                  "  pm.expect(codes).to.include('Q_PM_ADMIN_FLAG');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Quote Against New Product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_code\": \"{{admin_product_code}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.environment.set('admin_quote_id', body.quote_id);",
+                  "pm.environment.set('admin_access_token', body.access_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Answer The Flag Question (true)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Quote-Token",
+                "value": "{{admin_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes/{{admin_quote_id}}/answers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes",
+                "{{admin_quote_id}}",
+                "answers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": [\n    {\n      \"question_code\": \"Q_PM_ADMIN_FLAG\",\n      \"answer_text\": \"true\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Evaluate - Rule Built Via Admin API Fires",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Quote-Token",
+                "value": "{{admin_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/quotes/{{admin_quote_id}}/evaluate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "quotes",
+                "{{admin_quote_id}}",
+                "evaluate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"strategy\": \"full\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('the rule just created through this API actually decides something', () => {",
+                  "  pm.expect(pm.response.json().outcome).to.eql('decline');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Admin - Error paths",
+      "item": [
+        {
+          "name": "Missing X-Admin-Key -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"PM_SHOULD_NOT_EXIST\",\n  \"name\": \"should not be created\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 422 (FastAPI request validation, header required)', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wrong X-Admin-Key -> 401",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Admin-Key",
+                "value": "definitely-not-the-real-key",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"PM_SHOULD_NOT_EXIST\",\n  \"name\": \"should not be created\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Duplicate Product Code -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Admin-Key",
+                "value": "{{admin_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{admin_product_code}}\",\n  \"name\": \"Duplicate\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409 (run Admin - Happy path first so admin_product_code exists)', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add Question To Unknown Product -> 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Admin-Key",
+                "value": "{{admin_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products/BOGUS_PRODUCT_CODE/questions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products",
+                "BOGUS_PRODUCT_CODE",
+                "questions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question_code\": \"Q_WONT_BE_CREATED\",\n  \"text\": \"x\",\n  \"answer_type\": \"boolean\",\n  \"sequence\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Enum Answer Type Without Options -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Admin-Key",
+                "value": "{{admin_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products/{{admin_product_code}}/questions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products",
+                "{{admin_product_code}}",
+                "questions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question_code\": \"Q_PM_BAD_ENUM\",\n  \"text\": \"Bad enum?\",\n  \"answer_type\": \"enum\",\n  \"sequence\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 422 (Pydantic validator: enum needs enum_options)', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Duplicate Question+Sequence On Same Product -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Admin-Key",
+                "value": "{{admin_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products/{{admin_product_code}}/questions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products",
+                "{{admin_product_code}}",
+                "questions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question_code\": \"Q_PM_ADMIN_FLAG\",\n  \"text\": \"Postman admin test flag?\",\n  \"answer_type\": \"boolean\",\n  \"sequence\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409 (same question+sequence already linked in Admin - Happy path)', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add Rule To Unknown Product -> 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Admin-Key",
+                "value": "{{admin_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products/BOGUS_PRODUCT_CODE/rules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products",
+                "BOGUS_PRODUCT_CODE",
+                "rules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"x\",\n  \"outcome\": \"decline\",\n  \"conditions\": [\n    {\n      \"question_code\": \"Q_PM_ADMIN_FLAG\",\n      \"operator\": \"=\",\n      \"value\": \"true\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rule With No Conditions -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Admin-Key",
+                "value": "{{admin_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products/{{admin_product_code}}/rules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products",
+                "{{admin_product_code}}",
+                "rules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Vacuous rule\",\n  \"outcome\": \"decline\",\n  \"conditions\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 422 (Pydantic validator: needs at least one condition)', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rule Condition References Unknown question_code -> 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "X-Admin-Key",
+                "value": "{{admin_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products/{{admin_product_code}}/rules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products",
+                "{{admin_product_code}}",
+                "rules"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Bad condition\",\n  \"outcome\": \"decline\",\n  \"conditions\": [\n    {\n      \"question_code\": \"Q_TOTALLY_MADE_UP\",\n      \"operator\": \"=\",\n      \"value\": \"true\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

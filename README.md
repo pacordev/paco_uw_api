@@ -304,6 +304,16 @@ Still open (Phase E): making error response shapes fully consistent — FastAPI'
 validation errors put a *list* under `detail`, while every hand-written error here puts a
 plain *string* there. Both already use the `detail` key, so it's a minor nit, not a gap.
 
+**DB role note:** `DATABASE_URL` connects as `uw_app`, a Neon role scoped to only what this
+app needs (no `DELETE`, no schema `CREATE`/`DROP`) — but every Neon-provisioned role
+(`uw_app` included) is automatically a member of `neon_superuser`, which grants full DML
+across the schema regardless of narrower grants, and neither we nor `neondb_owner` can
+revoke that membership (needs Neon-internal access we don't have). So `uw_app` blocks
+schema-level damage but isn't true DML-level isolation — see `uw_plan.md`'s hardening
+backlog for the full investigation. The app's own code never issues a `DELETE` or DDL
+statement regardless, so this matters mainly for a leaked credential used directly, not for
+anything the running app itself can be tricked into doing.
+
 ## Running the test suite
 
 `tests/` has API-level contract tests (pytest) hitting real HTTP endpoints against a real,

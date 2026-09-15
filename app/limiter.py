@@ -16,6 +16,8 @@ from slowapi.errors import RateLimitExceeded
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from app.abuse_log import log_rate_limit_exceeded
+
 
 def _client_ip(request: Request) -> str:
     # Render terminates the connection at its edge proxy, so request.client.host
@@ -47,5 +49,6 @@ def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSO
     # instead of slowapi's default {"error": ...}. _inject_headers is "private" but
     # it's the pattern slowapi's own docs point to for a custom handler - it's what
     # adds Retry-After/X-RateLimit-* instead of reimplementing that logic here.
+    log_rate_limit_exceeded(request, ip=_client_ip(request), limit=str(exc.detail))
     response = JSONResponse(status_code=429, content={"detail": f"Rate limit exceeded: {exc.detail}"})
     return request.app.state.limiter._inject_headers(response, request.state.view_rate_limit)

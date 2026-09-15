@@ -33,6 +33,7 @@ underwritting_api/
 │   ├── main.py       # FastAPI app: lifespan, CORS, rate-limit wiring, /health, routers
 │   ├── db.py         # asyncpg pool: connect()/disconnect()/get_pool()
 │   ├── limiter.py    # shared slowapi Limiter + custom 429 handler
+│   ├── abuse_log.py  # structured JSON logging for rate-limit 429s
 │   ├── models.py     # Pydantic response shapes
 │   ├── products.py   # GET /products, GET /products/{code}/questions
 │   ├── quotes.py     # POST /quotes, POST /quotes/{quote_id}/answers, POST /quotes/{quote_id}/evaluate
@@ -272,7 +273,11 @@ exception — they're not applicant-facing, and use their own single-key model i
   **20/minute**, everything else (the `GET` endpoints) a **60/minute** app-wide default. A
   429 uses the same `{"detail": ...}` shape as every other error response here, plus
   `Retry-After`/`X-RateLimit-*` headers. `RATE_LIMIT_ENABLED=false` turns it off entirely
-  (used by the test suite — see below).
+  (used by the test suite — see below). Every 429 also logs a structured abuse record
+  (`app/abuse_log.py`) — a bare JSON line with `event`, `ip`, `method`, `path`, the specific
+  limit string that was hit, and a UTC timestamp, via its own logger/handler so nothing else
+  prefixes the line and breaks parsing it as JSON. Queryable with grep/jq locally or Render's
+  log search in prod — no new dependency or database table.
 - **API docs hidden in prod.** `/docs`, `/redoc`, and `/openapi.json` hand anyone the full
   API shape — fine locally, not something a public deployment needs to expose. `app/main.py`
   reads `EXPOSE_API_DOCS` (default enabled, so local dev/tests need no extra config) and sets
@@ -429,6 +434,10 @@ under "Running the test suite" above.
 Every phase from `uw_plan.md` Part 2 is done, aside from the one cosmetic error-shape
 consistency nit noted under Phase E and Phase G's missing pytest coverage. Beyond the
 original plan: `/docs`/`/redoc`/`/openapi.json` are now also disabled in prod
-(`EXPOSE_API_DOCS`), and a request body size limit (`app/body_limit.py`, 4 of the 29 pytest
-tests above) closes the first item from `uw_plan.md`'s hardening backlog — see "Security"
-above for both.
+(`EXPOSE_API_DOCS`), a request body size limit (`app/body_limit.py`, 4 of the 29 pytest
+tests above) and structured abuse logging (`app/abuse_log.py`) close two more items from
+`uw_plan.md`'s hardening backlog, and `pip-audit` runs in CI on every push/PR plus weekly
+(caught and fixed a real `pytest` CVE) — see "Security" and "Dependency scanning" above for
+all of it. Only two backlog items remain open: the least-privilege DB role (attempted,
+blocked by a Neon platform limitation — see "DB role note" under "Security"), and
+`app/admin.py`'s missing pytest coverage.

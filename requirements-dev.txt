@@ -1,5 +1,6 @@
 -r requirements.txt
 
 # test-only deps, not needed by the deployed app
-pytest>=8,<9
+pytest>=9.0.3,<10  # 8.x had a known vulnerability (PYSEC-2026-1845), fixed in 9.0.3
 httpx>=0.27,<1   # fastapi.testclient.TestClient wraps httpx under the hood
+pip-audit>=2.7,<3  # scans requirements*.txt for known CVEs, see CI workflow + README

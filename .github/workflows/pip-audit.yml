@@ -1,0 +1,36 @@
+name: pip-audit
+
+# Scans this app's own dependencies for known CVEs (see uw_plan.md's hardening backlog).
+# Runs on every push/PR so a new vulnerable pin gets caught before merge, and weekly on a
+# schedule so an existing pin that gets a CVE disclosed *after* it was added doesn't sit
+# unnoticed until the next code change happens to touch requirements*.txt.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1" # Monday 06:00 UTC
+  workflow_dispatch: {}
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      # Two separate runs, not one combined install+audit - keeps the failure clearly
+      # scoped to "runtime" (what's actually deployed on Render) vs. "dev-only" (pytest,
+      # httpx - never shipped), instead of one undifferentiated red check.
+      - name: Audit runtime dependencies (requirements.txt)
+        run: pip-audit -r requirements.txt
+
+      - name: Audit dev dependencies (requirements-dev.txt)
+        run: pip-audit -r requirements-dev.txt

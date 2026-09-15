@@ -365,6 +365,28 @@ collection's "Admin - Happy path"/"Admin - Error paths" folders (see "Testing wi
 above) and was verified manually against Neon, but not by anything in `tests/`. Worth adding
 before this goes anywhere near production.
 
+## Dependency scanning
+
+`pip-audit` checks `requirements.txt` (what's actually deployed) and `requirements-dev.txt`
+(test-only, never shipped) separately against known-CVE databases:
+
+```bash
+pip install -r requirements-dev.txt   # includes pip-audit itself
+pip-audit -r requirements.txt
+pip-audit -r requirements-dev.txt
+```
+
+Runs automatically via `.github/workflows/pip-audit.yml` on every push/PR to `main`, plus a
+weekly schedule (Monday 06:00 UTC) — the schedule matters because a pin that's clean today
+can have a CVE disclosed against it later with no code change of ours to trigger a re-check.
+The two dependency files are audited as separate steps so a failure is clearly scoped to
+"something actually deployed" vs. "test-only tooling," not one undifferentiated red check.
+
+Found and fixed one real hit setting this up: `pytest 8.4.2` had a known vulnerability
+(`PYSEC-2026-1845`, fixed in `9.0.3`) — `requirements-dev.txt`'s pin widened to
+`pytest>=9.0.3,<10`, full 29-test suite re-verified passing under the new version before
+committing the bump. `requirements.txt` (runtime) had no findings.
+
 ## Where things stand
 
 **Phase A (stack & scaffold) — done.** App boots, connects to Postgres via a pooled asyncpg

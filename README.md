@@ -50,8 +50,11 @@ underwritting_api/
 │   ├── test_docs.py
 │   └── test_body_limit.py
 ├── postman/          # Postman collection + environment, see "Testing with Postman" below
+├── .github/
+│   └── workflows/
+│       └── pip-audit.yml  # dependency vulnerability scan, see "Dependency scanning" below
 ├── requirements.txt
-├── requirements-dev.txt  # + pytest, httpx (test-only, not deployed)
+├── requirements-dev.txt  # + pytest, httpx, pip-audit (test-only, not deployed)
 ├── pytest.ini
 ├── render.yaml      # Render Blueprint: service definition, build/start commands, env vars
 ├── .env.example
@@ -330,7 +333,7 @@ assumes the sibling repo layout from "Project structure" above (`../underwrittin
 
 ```bash
 source venv/bin/activate
-pip install -r requirements-dev.txt   # adds pytest + httpx on top of the app's own deps
+pip install -r requirements-dev.txt   # adds pytest, httpx, pip-audit on top of the app's own deps
 docker compose up -d                  # in ../underwritting - needs to be reachable on :5432
 pytest
 ```
@@ -346,9 +349,12 @@ left nothing behind).
 Rate limiting is **off** for most of the suite - these tests fire many requests back-to-back
 through one `TestClient`, which all share a single IP bucket ("testclient", since there's no
 real proxy setting `X-Forwarded-For`), and that has nothing to do with what those tests are
-checking. `tests/test_rate_limiting.py` re-enables it (`client.app.state.limiter.enabled =
-True`) just for its own two assertions, using a distinct `X-Forwarded-For` per test so it
-doesn't collide with anything else, and turns it back off in a `finally` afterward.
+checking. `tests/test_rate_limiting.py` re-enables it (`fastapi_app.state.limiter.enabled =
+True` — `fastapi_app` is `app.main`'s underlying FastAPI instance, exported separately
+because `app` itself is now wrapped by `MaxBodySizeMiddleware` and no longer exposes
+`.state` directly, see `app/body_limit.py`) just for its own two assertions, using a
+distinct `X-Forwarded-For` per test so it doesn't collide with anything else, and turns it
+back off in a `finally` afterward.
 
 Coverage: health, products/questions (including that `expected_answer` never leaks), quote
 creation, answer submission (happy path, upsert, all 404/422/400 error paths, atomic

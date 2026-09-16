@@ -308,9 +308,19 @@ exception — they're not applicant-facing, and use their own single-key model i
   `render.yaml` (`sync: false`) to its own value on Render, always different from the local
   `.env` one.
 
-Still open (Phase E): making error response shapes fully consistent — FastAPI's own
-validation errors put a *list* under `detail`, while every hand-written error here puts a
-plain *string* there. Both already use the `detail` key, so it's a minor nit, not a gap.
+**Consistent error shape.** FastAPI's own request validation (bad enum value, missing
+required header, etc.) puts a *list* of `{loc, msg, type}` dicts under `detail` by default,
+while every hand-written `HTTPException` here puts a plain *string* there. `app/main.py`
+registers a `RequestValidationError` handler that flattens that list into a single
+`"loc: msg; loc: msg"` string, so every error response — hand-written or FastAPI's own —
+now has the exact same `{"detail": <string>}` shape. This also fixed `/docs`/`/openapi.json`
+themselves: every router is now included with `responses={422: {"model": ErrorOut}}`
+(`app/models.py`), replacing FastAPI's auto-generated `HTTPValidationError` (list-shaped)
+schema everywhere, so the generated docs match what the API actually returns. Covered by
+`tests/test_error_shape.py` and by four assertions added to the Postman collection's
+existing 422 examples (`Invalid strategy Value`, `Missing X-Admin-Key`,
+`Enum Answer Type Without Options`, `Rule With No Conditions` — the four that used to hit
+FastAPI's list-shaped default).
 
 **DB role note:** `DATABASE_URL` connects as `uw_app`, a Neon role scoped to only what this
 app needs (no `DELETE`, no schema `CREATE`/`DROP`) — but every Neon-provisioned role
@@ -361,10 +371,11 @@ creation, answer submission (happy path, upsert, all 404/422/400 error paths, at
 rollback), evaluation (both strategies, pre-answer default, history not overwritten, all
 error paths), CORS preflight (allowed origin vs. rejected origin), rate limiting (10th
 request from one IP succeeds, 11th gets 429; a different IP is unaffected), the API docs
-being reachable by default, and the request body size limit (normal request unaffected,
+being reachable by default, the request body size limit (normal request unaffected,
 oversized with `Content-Length` 413, oversized streamed body with no `Content-Length` 413,
-within-limit request still reaches the real handler) — 29 tests, all passing, verified to
-run clean twice in a row without touching the dev database's own data.
+within-limit request still reaches the real handler), and that FastAPI's own validation
+errors and hand-written errors both come back with a string `detail` — 32 tests, all
+passing, verified to run clean twice in a row without touching the dev database's own data.
 
 Note: `pytest` (the bare console command) can fail with `ModuleNotFoundError: No module
 named 'app'` depending on how it resolves the working directory into `sys.path` — if that
@@ -418,14 +429,13 @@ rollback on a mixed valid/invalid batch.
 `quote_evaluation` keeps every run as history (confirmed 3 rows for one quote across the
 above) while `quote_latest_evaluation` surfaces only the newest per strategy.
 
-**Phase E (mostly done)** — quote-ownership token, CORS lockdown, the public-vs-internal auth
-decision (public, confirmed), and rate limiting are all done. See "Security" above. Verified
-live against the local docker Postgres: 10 rapid `POST /quotes` calls from one IP succeed and
-the 11th gets 429 with the right headers, a different `X-Forwarded-For` isn't affected, and
-CORS headers still land on a 429. Only remaining item: making error-response shapes fully
-consistent (minor, not a gap — see "Security" above).
+**Phase E (done).** Quote-ownership token, CORS lockdown, the public-vs-internal auth
+decision (public, confirmed), rate limiting, and consistent error-response shapes are all
+done. See "Security" above. Verified live against the local docker Postgres: 10 rapid
+`POST /quotes` calls from one IP succeed and the 11th gets 429 with the right headers, a
+different `X-Forwarded-For` isn't affected, and CORS headers still land on a 429.
 
-**Phase F (API-level tests) — done.** 29 pytest contract tests in `tests/`, hitting real
+**Phase F (API-level tests) — done.** 32 pytest contract tests in `tests/`, hitting real
 endpoints against a dedicated, freshly-rebuilt `underwriting_test` database. See "Running the
 test suite" above.
 
@@ -437,10 +447,9 @@ product correctly decided `decline`; also covered by the Postman collection's tw
 folders (see "Testing with Postman" above). Not yet covered by `tests/` — see the gap noted
 under "Running the test suite" above.
 
-Every phase from `uw_plan.md` Part 2 is done, aside from the one cosmetic error-shape
-consistency nit noted under Phase E and Phase G's missing pytest coverage. Beyond the
-original plan: `/docs`/`/redoc`/`/openapi.json` are now also disabled in prod
-(`EXPOSE_API_DOCS`), a request body size limit (`app/body_limit.py`, 4 of the 29 pytest
+Every phase from `uw_plan.md` Part 2 is done, aside from Phase G's missing pytest coverage.
+Beyond the original plan: `/docs`/`/redoc`/`/openapi.json` are now also disabled in prod
+(`EXPOSE_API_DOCS`), a request body size limit (`app/body_limit.py`, 4 of the 32 pytest
 tests above) and structured abuse logging (`app/abuse_log.py`) close two more items from
 `uw_plan.md`'s hardening backlog, and `pip-audit` runs in CI on every push/PR plus weekly
 (caught and fixed a real `pytest` CVE) — see "Security" and "Dependency scanning" above for

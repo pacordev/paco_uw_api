@@ -6,14 +6,18 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from app import db
 from app.admin import router as admin_router
 from app.body_limit import MaxBodySizeMiddleware, max_body_bytes_from_env
 from app.limiter import limiter, rate_limit_exceeded_handler
+from app.models import ErrorOut
 from app.products import router as products_router
 from app.quotes import router as quotes_router
 
@@ -61,9 +65,24 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
 
-app.include_router(products_router)
-app.include_router(quotes_router)
-app.include_router(admin_router)
+# FastAPI's own request validation (bad/missing body field, missing header, etc.) puts a
+# *list* of {loc, msg, type} dicts under "detail" by default - every hand-written error on
+# this API puts a plain *string* there instead. Flattening it to a string here means every
+# error response, no matter where it comes from, has the exact same {"detail": <string>} shape.
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    messages = [f"{'.'.join(str(part) for part in err['loc'])}: {err['msg']}" for err in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": "; ".join(messages)})
+
+
+# overrides FastAPI's auto-added 422 doc (HTTPValidationError, a list under detail) with the
+# real shape - applied to every router so no route is left pointing at the stale schema
+# (FastAPI adds a 422 to any route with declared parameters, even a path param that can't
+# actually fail validation, like products_router's `code: str`)
+_error_responses = {422: {"model": ErrorOut}}
+app.include_router(products_router, responses=_error_responses)
+app.include_router(quotes_router, responses=_error_responses)
+app.include_router(admin_router, responses=_error_responses)
 
 
 @app.get("/health")

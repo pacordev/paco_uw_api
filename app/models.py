@@ -17,6 +17,13 @@ AnswerType = Literal["boolean", "number", "text", "enum"]
 Operator = Literal["=", "<>", ">", ">=", "<", "<="]
 
 
+class ErrorOut(BaseModel):
+    # every error response on this API looks like this - registered in app/main.py as the
+    # documented 422 shape so /docs stops advertising FastAPI's default HTTPValidationError
+    # (a list under detail), which app/main.py's RequestValidationError handler no longer sends
+    detail: str
+
+
 class ProductOut(BaseModel):
     code: str
     name: str

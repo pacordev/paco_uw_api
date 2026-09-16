@@ -868,7 +868,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 422', () => pm.response.to.have.status(422));"
+                  "pm.test('status is 422', () => pm.response.to.have.status(422));",
+                  "pm.test('detail is a string (consistent error shape)', () => pm.expect(pm.response.json().detail).to.be.a('string'));"
                 ]
               }
             }
@@ -1272,7 +1273,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 422 (FastAPI request validation, header required)', () => pm.response.to.have.status(422));"
+                  "pm.test('status is 422 (FastAPI request validation, header required)', () => pm.response.to.have.status(422));",
+                  "pm.test('detail is a string (consistent error shape)', () => pm.expect(pm.response.json().detail).to.be.a('string'));"
                 ]
               }
             }
@@ -1468,7 +1470,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 422 (Pydantic validator: enum needs enum_options)', () => pm.response.to.have.status(422));"
+                  "pm.test('status is 422 (Pydantic validator: enum needs enum_options)', () => pm.response.to.have.status(422));",
+                  "pm.test('detail is a string (consistent error shape)', () => pm.expect(pm.response.json().detail).to.be.a('string'));"
                 ]
               }
             }
@@ -1618,7 +1621,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status is 422 (Pydantic validator: needs at least one condition)', () => pm.response.to.have.status(422));"
+                  "pm.test('status is 422 (Pydantic validator: needs at least one condition)', () => pm.response.to.have.status(422));",
+                  "pm.test('detail is a string (consistent error shape)', () => pm.expect(pm.response.json().detail).to.be.a('string'));"
                 ]
               }
             }

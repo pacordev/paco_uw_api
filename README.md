@@ -5,13 +5,23 @@ logic lives here — every decision comes from the Postgres functions in that re
 (`evaluate_quote_full`, `evaluate_quote_short_circuit`, etc). This API just exposes them over
 HTTP so a frontend can drive a quote through: pick a product, answer its questions, evaluate.
 
+## Deployment
+
+Live at **https://underwriting-api-4ky9.onrender.com** (Render, set up from the checked-in
+`render.yaml` Blueprint). `EXPOSE_API_DOCS=false` there, so `/docs`, `/redoc`, and
+`/openapi.json` aren't reachable — `GET /health` and `GET /products` are the quickest way
+to confirm it's up. `ALLOWED_ORIGINS` on that deployment is scoped to local dev origins for
+now, since the frontend isn't deployed yet; it'll need the real Vercel domain added once it
+is (see "CORS lockdown" under Security).
+
 ## Stack
 
 - **Python + FastAPI**
 - **asyncpg** for the DB driver, with its own connection pool — no ORM, this layer is too
   thin to need one.
-- Deploy target: **Vercel** (frontend) + **Render** (this API, as a persistent process, not
-  serverless) + **Neon** (Postgres). Render's process stays up, so we connect to Neon's
+- Deploy target: **Vercel** (frontend, not deployed yet) + **Render** (this API, deployed —
+  see "Deployment" above — as a persistent process, not serverless) + **Neon** (Postgres,
+  already in real use). Render's process stays up, so we connect to Neon's
   *direct/unpooled* connection string rather than the PgBouncer-backed pooled one — a
   long-lived process doesn't need PgBouncer's connection-churn protection, and going direct
   sidesteps PgBouncer transaction-mode pooling fighting asyncpg's prepared statements.
@@ -96,8 +106,7 @@ locally (see above), three views of it:
 - **`http://localhost:8000/redoc`** — ReDoc. Same schema, a cleaner read-only reference view
   for just browsing the contract without executing anything.
 - **`http://localhost:8000/openapi.json`** — the raw OpenAPI 3.x schema both pages render
-  from. Useful if you want to feed it into another tool, e.g. generating a typed client for
-  the future React frontend.
+  from. Useful if you want to feed it into another tool, e.g. generating a typed client.
 
 
 ## Testing with Postman

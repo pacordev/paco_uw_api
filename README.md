@@ -10,18 +10,18 @@ HTTP so a frontend can drive a quote through: pick a product, answer its questio
 Live at **https://underwriting-api-4ky9.onrender.com** (Render, set up from the checked-in
 `render.yaml` Blueprint). `EXPOSE_API_DOCS=false` there, so `/docs`, `/redoc`, and
 `/openapi.json` aren't reachable — `GET /health` and `GET /products` are the quickest way
-to confirm it's up. `ALLOWED_ORIGINS` on that deployment is scoped to local dev origins for
-now, since the frontend isn't deployed yet; it'll need the real Vercel domain added once it
-is (see "CORS lockdown" under Security).
+to confirm it's up. `ALLOWED_ORIGINS` includes the deployed frontend's real origin,
+`https://paco-uw-web.vercel.app` (see "CORS lockdown" under Security) — a browser's
+`Origin` header never has a trailing slash, so that value has to match exactly.
 
 ## Stack
 
 - **Python + FastAPI**
 - **asyncpg** for the DB driver, with its own connection pool — no ORM, this layer is too
   thin to need one.
-- Deploy target: **Vercel** (frontend, not deployed yet) + **Render** (this API, deployed —
-  see "Deployment" above — as a persistent process, not serverless) + **Neon** (Postgres,
-  already in real use). Render's process stays up, so we connect to Neon's
+- Deploy target: **Vercel** (frontend) + **Render** (this API, as a persistent process, not
+  serverless) + **Neon** (Postgres) — all three deployed, see "Deployment" above. Render's
+  process stays up, so we connect to Neon's
   *direct/unpooled* connection string rather than the PgBouncer-backed pooled one — a
   long-lived process doesn't need PgBouncer's connection-churn protection, and going direct
   sidesteps PgBouncer transaction-mode pooling fighting asyncpg's prepared statements.

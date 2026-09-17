@@ -1,6 +1,6 @@
 name: pip-audit
 
-# Scans this app's own dependencies for known CVEs (see uw_plan.md's hardening backlog).
+# Scans this app's own dependencies for known CVEs.
 # Runs on every push/PR so a new vulnerable pin gets caught before merge, and weekly on a
 # schedule so an existing pin that gets a CVE disclosed *after* it was added doesn't sit
 # unnoticed until the next code change happens to touch requirements*.txt.

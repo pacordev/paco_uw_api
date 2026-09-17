@@ -1,6 +1,6 @@
 """Structured logging for rate-limit abuse - one JSON line per 429, so "who's getting
 throttled repeatedly" is queryable (grep/jq locally, Render's log search in prod) instead of
-invisible. See uw_plan.md's hardening backlog for why this exists.
+invisible.
 
 A dedicated logger with its own handler/formatter, not just logging.warning(...), so the
 output is a bare JSON line with nothing else on it - no "WARNING:app.abuse_log:" prefix from

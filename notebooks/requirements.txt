@@ -1,0 +1,5 @@
+# notebook-only deps, kept out of requirements.txt/requirements-dev.txt since neither the
+# deployed service nor the pytest suite needs any of this
+jupyter
+pandas
+requests

@@ -47,6 +47,7 @@ from app.models import (
     EvaluateOut,
     QuoteCreate,
     QuoteOut,
+    TriggerOut,
 )
 
 router = APIRouter()
@@ -172,6 +173,45 @@ async def evaluate_quote(
                 body.strategy,
             )
 
+            # which rule decided it, and which answer(s) drove it - see
+            # sql/phase8_evaluation_trigger.sql in the underwritting repo. Not persisted
+            # (quote_evaluation only ever stores the outcome), just computed alongside it.
+            rule_id = await conn.fetchval(
+                "SELECT uw_evaluation_trigger($1, $2)", quote_id, body.strategy
+            )
+
+            trigger = None
+            if rule_id is not None:
+                rule_name = await conn.fetchval("SELECT name FROM uw_rule WHERE id = $1", rule_id)
+                condition_rows = await conn.fetch(
+                    """
+                    SELECT q.code
+                    FROM uw_rule_condition rc
+                    JOIN uw_question q ON q.id = rc.question_id
+                    WHERE rc.rule_id = $1
+                    ORDER BY rc.id
+                    """,
+                    rule_id,
+                )
+                # a rule can't have two conditions on the same question in practice, but
+                # dict.fromkeys dedupes defensively while preserving definition order
+                question_codes = list(dict.fromkeys(row["code"] for row in condition_rows))
+
+                stopped_early = False
+                if body.strategy == "short_circuit":
+                    stop_rule_id = await conn.fetchval(
+                        "SELECT uw_short_circuit_stop_rule($1)", quote_id
+                    )
+                    stopped_early = stop_rule_id == rule_id
+
+                trigger = TriggerOut(
+                    rule_name=rule_name, question_codes=question_codes, stopped_early=stopped_early
+                )
+
     return EvaluateOut(
-        quote_id=quote_id, strategy=body.strategy, outcome=outcome, evaluated_at=evaluated_at
+        quote_id=quote_id,
+        strategy=body.strategy,
+        outcome=outcome,
+        evaluated_at=evaluated_at,
+        trigger=trigger,
     )

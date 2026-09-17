@@ -5,8 +5,6 @@ logic lives here — every decision comes from the Postgres functions in that re
 (`evaluate_quote_full`, `evaluate_quote_short_circuit`, etc). This API just exposes them over
 HTTP so a frontend can drive a quote through: pick a product, answer its questions, evaluate.
 
-Endpoint contract and phase-by-phase build plan live in `underwritting/uw_plan.md` (Part 2).
-
 ## Stack
 
 - **Python + FastAPI**
@@ -20,8 +18,10 @@ Endpoint contract and phase-by-phase build plan live in `underwritting/uw_plan.m
 - Locally, points at the `docker-compose.yml` Postgres from the `underwritting` repo — no
   separate DB needed for local dev until we're ready to test against Neon.
 - **Neon gotcha:** `app/db.py`'s `search_path` setting needs a matching server-side
-  `ALTER DATABASE ... SET search_path TO myins` on the Neon database itself (already applied)
-  — see `uw_plan.md` Part 2 for why the client-side setting alone isn't enough there. Applies
+  `ALTER DATABASE ... SET search_path TO myins` on the Neon database itself (already
+  applied) — a client-set `search_path` alone isn't enough there, since asyncpg's default
+  `RESET ALL` on every connection release back to the pool wipes it, and Neon's connection
+  proxy silently drops the `server_settings` startup param instead of forwarding it. Applies
   to any fresh Neon database this ever gets pointed at.
 
 ## Project structure
@@ -37,7 +37,7 @@ underwritting_api/
 │   ├── models.py     # Pydantic response shapes
 │   ├── products.py   # GET /products, GET /products/{code}/questions
 │   ├── quotes.py     # POST /quotes, POST /quotes/{quote_id}/answers, POST /quotes/{quote_id}/evaluate
-│   ├── admin.py      # POST /products, POST /products/{code}/questions, POST /products/{code}/rules
+│   ├── admin.py      # POST /products, .../questions, .../rules + GET .../rules (admin-only)
 │   └── body_limit.py # ASGI middleware capping request body size (Content-Length + streamed backstop)
 ├── tests/            # pytest contract tests, see "Running the test suite" below
 │   ├── conftest.py   # test DB rebuild, TestClient fixture, create_quote/db_fetch helpers
@@ -48,8 +48,11 @@ underwritting_api/
 │   ├── test_cors.py
 │   ├── test_rate_limiting.py
 │   ├── test_docs.py
-│   └── test_body_limit.py
+│   ├── test_body_limit.py
+│   ├── test_error_shape.py
+│   └── test_admin.py
 ├── postman/          # Postman collection + environment, see "Testing with Postman" below
+├── notebooks/        # Jupyter client demo, see "Notebook console" below
 ├── .github/
 │   └── workflows/
 │       └── pip-audit.yml  # dependency vulnerability scan, see "Dependency scanning" below
@@ -57,7 +60,6 @@ underwritting_api/
 ├── requirements-dev.txt  # + pytest, httpx, pip-audit (test-only, not deployed)
 ├── pytest.ini
 ├── render.yaml      # Render Blueprint: service definition, build/start commands, env vars
-├── .env.example
 ```
 
 ## Running locally
@@ -97,16 +99,6 @@ locally (see above), three views of it:
   from. Useful if you want to feed it into another tool, e.g. generating a typed client for
   the future React frontend.
 
-All three are controlled by `EXPOSE_API_DOCS` (see `app/main.py`) — on by default locally, so
-no setup needed, and off in prod (`render.yaml` sets it to `"false"`) since a public
-deployment doesn't need to expose its full schema. Testing what "off" looks like locally:
-
-```bash
-EXPOSE_API_DOCS=false uvicorn app.main:app --reload
-```
-
-All three routes 404 with that set; every real endpoint (`/health`, `/products`, `/quotes`,
-...) is unaffected either way.
 
 ## Testing with Postman
 
@@ -166,11 +158,30 @@ The collection is split into five folders:
 
 Each request has a `pm.test(...)` assertion on status code (and, where it matters, on the
 response body) in its **Tests** tab in Postman — green checkmarks in the response panel mean
-it passed. This was also verified headlessly with `npx newman run
+it passed. It can also run headlessly with `npx newman run
 postman/underwriting_api.postman_collection.json -e
 postman/underwriting_api_local.postman_environment.json` (with `admin_key` filled in first),
 which runs the same requests/tests from the terminal without opening the Postman app — 34
-requests, 48 assertions, all passing, run clean twice in a row.
+requests, 48 assertions total.
+
+## Notebook console
+
+`notebooks/quote_console_demo.ipynb` is a Python client doing the same things
+`underwritting_web` does from the browser — browse products, answer questions, evaluate a
+quote under both models, browse/build the catalog — from a Jupyter notebook instead of a
+page. Handy for scripting a batch of quotes or poking at the API interactively without a
+browser.
+
+```bash
+pip install -r notebooks/requirements.txt
+jupyter lab notebooks/quote_console_demo.ipynb
+```
+
+Set `UW_API_URL` if the API isn't on the default `http://localhost:8000`. Admin cells
+prompt for `ADMIN_API_KEY` via `getpass` rather than a hardcoded value, so it never ends up
+saved in the notebook's cell output. The **Build new** cells that actually create a
+product/question/rule are commented out by default — real, permanent writes to the live
+catalog, same as the web app's Build new, with no delete endpoint to undo them.
 
 Note: `POST /quotes` is rate-limited to 10/minute per IP (see "Security" below) — the
 collection calls it twice per run (once in Happy path, once in Admin - Happy path), so this
@@ -221,13 +232,18 @@ DELETE FROM insurance_product WHERE code LIKE 'PM_TEST_%';
   rest, no partial writes.
 - `POST /quotes/{quote_id}/evaluate` — same `X-Quote-Token` requirement and same-message
   404s as the answers endpoint. `{strategy: "full" | "short_circuit"}` → `{quote_id, strategy,
-  outcome, evaluated_at}`. Thin wrapper over `evaluate_and_record_quote` — the caller always
-  picks the strategy explicitly (no auto-evaluate on the last answer), and both Model A and
-  Model B stay reachable. Every call is recorded as a new `quote_evaluation` row (full audit
-  history, not overwritten) even if it's the same strategy re-run on the same quote. 422 if
-  `strategy` isn't `full`/`short_circuit` (Pydantic rejects it before the DB is touched).
+  outcome, evaluated_at, trigger}`. Thin wrapper over `evaluate_and_record_quote` — the
+  caller always picks the strategy explicitly (no auto-evaluate on the last answer), and
+  both Model A and Model B stay reachable. Every call is recorded as a new `quote_evaluation`
+  row (full audit history, not overwritten) even if it's the same strategy re-run on the
+  same quote. 422 if `strategy` isn't `full`/`short_circuit` (Pydantic rejects it before the
+  DB is touched). `trigger` is `{rule_name, question_codes, stopped_early}` — which rule
+  decided the outcome and which answer(s) drove it — or `null` when nothing matched (the
+  `accept` default). Computed fresh on every call via
+  `underwritting/sql/phase8_evaluation_trigger.sql`'s `uw_evaluation_trigger`, not persisted
+  anywhere.
 
-**Admin — build the catalog.** All three require `X-Admin-Key: <ADMIN_API_KEY>` (see
+**Admin — build the catalog.** All four require `X-Admin-Key: <ADMIN_API_KEY>` (see
 "Security" below); missing the header is a 422 (FastAPI request validation), a wrong value is
 a 401.
 
@@ -245,12 +261,18 @@ a 401.
   `code` or an unknown `question_code` inside `conditions`. 422 if `conditions` is empty (a
   rule with no conditions can never fire — see `uw_rule_condition` in the `underwritting`
   README).
+- `GET /products/{code}/rules` → `[{id, product_code, name, priority, outcome,
+  stop_evaluation, conditions: [{question_code, operator, value}, ...]}]`. 404 on an unknown
+  product `code`. Admin-only rather than on the public router above, for the same reason
+  `product_question.expected_answer` is never returned publicly — a rule's conditions are the
+  exact thresholds (e.g. `Q_BMI > 32 → decline`) that decide an outcome, so handing them to an
+  applicant would hand them the answer key.
 
 ## Security
 
-This is a **public, applicant-facing API — no login** (confirmed decision, see `uw_plan.md`
-Phase E). Auth stays limited to the per-quote token below; the rest of the hardening is CORS
-+ rate limiting rather than a user-auth layer. The admin endpoints (below) are the one
+This is a **public, applicant-facing API — no login** (confirmed decision). Auth stays
+limited to the per-quote token below; the rest of the hardening is CORS + rate limiting
+rather than a user-auth layer. The admin endpoints (below) are the one
 exception — they're not applicant-facing, and use their own single-key model instead.
 
 - **Quote ownership token.** `quote_id` is a plain sequential integer, so on its own it's
@@ -273,7 +295,9 @@ exception — they're not applicant-facing, and use their own single-key model i
   its edge proxy, so `request.client.host` would be the proxy for every caller, not the real
   client. Per-IP limits: `POST /quotes` **10/minute** (tightest — it's the resource-creation
   endpoint), `POST /quotes/{quote_id}/answers` **30/minute**, `POST /quotes/{quote_id}/evaluate`
-  **20/minute**, everything else (the `GET` endpoints) a **60/minute** app-wide default. A
+  **20/minute**, every admin route (all four in `app/admin.py`) also **20/minute** — tighter
+  than the public `GET` default since these guard a single static secret with no lockout,
+  everything else (the public `GET` endpoints) a **60/minute** app-wide default. A
   429 uses the same `{"detail": ...}` shape as every other error response here, plus
   `Retry-After`/`X-RateLimit-*` headers. `RATE_LIMIT_ENABLED=false` turns it off entirely
   (used by the test suite — see below). Every 429 also logs a structured abuse record
@@ -281,13 +305,6 @@ exception — they're not applicant-facing, and use their own single-key model i
   limit string that was hit, and a UTC timestamp, via its own logger/handler so nothing else
   prefixes the line and breaks parsing it as JSON. Queryable with grep/jq locally or Render's
   log search in prod — no new dependency or database table.
-- **API docs hidden in prod.** `/docs`, `/redoc`, and `/openapi.json` hand anyone the full
-  API shape — fine locally, not something a public deployment needs to expose. `app/main.py`
-  reads `EXPOSE_API_DOCS` (default enabled, so local dev/tests need no extra config) and sets
-  `docs_url`/`redoc_url`/`openapi_url` to `None` when it's `"false"`; `render.yaml` sets it to
-  `"false"` for the deployed service. Verified live both ways: default gets `200` on all
-  three, `EXPOSE_API_DOCS=false` gets `404` on all three while every real endpoint still
-  works normally.
 
 - **Request body size limit.** `app/body_limit.py` wraps the whole app in a pure ASGI
   middleware, outside even CORS/rate-limiting, capping request bodies at
@@ -299,45 +316,36 @@ exception — they're not applicant-facing, and use their own single-key model i
   CORS headers (it runs before CORS does), unlike the 429 handler above — a deliberate
   trade-off, since this guards against abuse rather than a case a working frontend should
   ever hit.
-- **Admin key.** `POST /products`, `POST /products/{code}/questions`, and
-  `POST /products/{code}/rules` (Phase G) mutate the shared catalog every applicant reads
-  from, so they're gated by a static `X-Admin-Key` header checked against the `ADMIN_API_KEY`
-  env var — there's exactly one admin, not one caller per resource, so the per-quote-token
-  ownership model doesn't fit here. Missing the header is a 422 (FastAPI's own request
-  validation, before `app/admin.py` ever runs); present but wrong is a 401. Set in
-  `render.yaml` (`sync: false`) to its own value on Render, always different from the local
-  `.env` one.
+- **Admin key.** `POST /products`, `POST /products/{code}/questions`, `POST /products/{code}/rules`,
+  and `GET /products/{code}/rules` mutate or expose the shared catalog, so they're
+  gated by a static `X-Admin-Key` header checked against the `ADMIN_API_KEY` env var — there's
+  exactly one admin, not one caller per resource, so the per-quote-token ownership model
+  doesn't fit here. Missing the header is a 422 (FastAPI's own request validation, before
+  `app/admin.py` ever runs); present but wrong is a 401. Set in `render.yaml` (`sync: false`)
+  to its own value on Render, always different from the local `.env` one. The comparison
+  itself uses `secrets.compare_digest`, not `!=` — a plain string comparison short-circuits
+  on the first mismatched byte, which leaks (in principle, over enough timed requests) how
+  many leading characters of a guess were right.
 
-**Consistent error shape.** FastAPI's own request validation (bad enum value, missing
-required header, etc.) puts a *list* of `{loc, msg, type}` dicts under `detail` by default,
-while every hand-written `HTTPException` here puts a plain *string* there. `app/main.py`
-registers a `RequestValidationError` handler that flattens that list into a single
-`"loc: msg; loc: msg"` string, so every error response — hand-written or FastAPI's own —
-now has the exact same `{"detail": <string>}` shape. This also fixed `/docs`/`/openapi.json`
-themselves: every router is now included with `responses={422: {"model": ErrorOut}}`
-(`app/models.py`), replacing FastAPI's auto-generated `HTTPValidationError` (list-shaped)
-schema everywhere, so the generated docs match what the API actually returns. Covered by
-`tests/test_error_shape.py` and by four assertions added to the Postman collection's
-existing 422 examples (`Invalid strategy Value`, `Missing X-Admin-Key`,
-`Enum Answer Type Without Options`, `Rule With No Conditions` — the four that used to hit
-FastAPI's list-shaped default).
+**Consistent error shape.** Every error response, no matter which layer raises it, comes
+back as `{"detail": <string>}`. `app/main.py` registers a `RequestValidationError` handler
+that flattens FastAPI's own request-validation errors (a *list* of `{loc, msg, type}` dicts
+by default) into a single `"loc: msg; loc: msg"` string, matching the plain string every
+hand-written `HTTPException` already uses. Every router is also included with
+`responses={422: {"model": ErrorOut}}` (`app/models.py`), so `/docs`/`/openapi.json`
+document that same string shape instead of FastAPI's default list-shaped
+`HTTPValidationError`. Covered by `tests/test_error_shape.py` and by assertions in the
+Postman collection's 422 examples.
 
 **DB role note:** `DATABASE_URL` connects as `uw_app`, a Neon role scoped to only what this
-app needs (no `DELETE`, no schema `CREATE`/`DROP`) — but every Neon-provisioned role
-(`uw_app` included) is automatically a member of `neon_superuser`, which grants full DML
-across the schema regardless of narrower grants, and neither we nor `neondb_owner` can
-revoke that membership (needs Neon-internal access we don't have). So `uw_app` blocks
-schema-level damage but isn't true DML-level isolation — see `uw_plan.md`'s hardening
-backlog for the full investigation. The app's own code never issues a `DELETE` or DDL
-statement regardless, so this matters mainly for a leaked credential used directly, not for
-anything the running app itself can be tricked into doing.
+app needs (no `DELETE`, no schema `CREATE`/`DROP`).
 
 ## Running the test suite
 
 `tests/` has API-level contract tests (pytest) hitting real HTTP endpoints against a real,
 dedicated Postgres database — no mocking. `tests/conftest.py` rebuilds a fresh
 `underwriting_test` database every test session by dropping it and replaying the exact
-`sql/phase1..7*.sql` files from the `underwritting` repo (schema + seed data), so it starts
+`sql/phase1..8*.sql` files from the `underwritting` repo (schema + seed data), so it starts
 from the same known state every run and never touches the `underwriting` dev database. It
 assumes the sibling repo layout from "Project structure" above (`../underwritting`).
 
@@ -368,24 +376,26 @@ back off in a `finally` afterward.
 
 Coverage: health, products/questions (including that `expected_answer` never leaks), quote
 creation, answer submission (happy path, upsert, all 404/422/400 error paths, atomic
-rollback), evaluation (both strategies, pre-answer default, history not overwritten, all
-error paths), CORS preflight (allowed origin vs. rejected origin), rate limiting (10th
-request from one IP succeeds, 11th gets 429; a different IP is unaffected), the API docs
-being reachable by default, the request body size limit (normal request unaffected,
-oversized with `Content-Length` 413, oversized streamed body with no `Content-Length` 413,
-within-limit request still reaches the real handler), and that FastAPI's own validation
-errors and hand-written errors both come back with a string `detail` — 32 tests, all
-passing, verified to run clean twice in a row without touching the dev database's own data.
+rollback), evaluation (both strategies, pre-answer default, history not overwritten, the
+`trigger` object for both a compound-rule case and a stop-rule case, all error paths), CORS
+preflight (allowed origin vs. rejected origin), rate limiting (10th request from one IP
+succeeds, 11th gets 429; a different IP is unaffected), the API docs being reachable by
+default, the request body size limit (normal request unaffected, oversized with
+`Content-Length` 413, oversized streamed body with no `Content-Length` 413, within-limit
+request still reaches the real handler), that FastAPI's own validation errors and
+hand-written errors both come back with a string `detail`, and `GET /products/{code}/rules`
+(happy path against `LIFE_SIMPLE`'s real 7 seeded rules, unknown product 404, wrong/missing
+admin key 401/422) — 37 tests total, none of it touching the dev database's own data.
 
 Note: `pytest` (the bare console command) can fail with `ModuleNotFoundError: No module
 named 'app'` depending on how it resolves the working directory into `sys.path` — if that
 happens, run `python -m pytest` instead (adds the current directory to `sys.path`
 explicitly).
 
-**Gap:** `app/admin.py` (Phase G) has no pytest coverage yet — it's exercised by the Postman
-collection's "Admin - Happy path"/"Admin - Error paths" folders (see "Testing with Postman"
-above) and was verified manually against Neon, but not by anything in `tests/`. Worth adding
-before this goes anywhere near production.
+The three `POST` endpoints in `app/admin.py` (create product/question/rule) are exercised by
+the Postman collection's "Admin - Happy path"/"Admin - Error paths" folders (see "Testing
+with Postman" above) rather than by anything in `tests/`; `GET /products/{code}/rules` is
+the one admin route with pytest coverage, in `tests/test_admin.py`.
 
 ## Dependency scanning
 
@@ -403,56 +413,3 @@ weekly schedule (Monday 06:00 UTC) — the schedule matters because a pin that's
 can have a CVE disclosed against it later with no code change of ours to trigger a re-check.
 The two dependency files are audited as separate steps so a failure is clearly scoped to
 "something actually deployed" vs. "test-only tooling," not one undifferentiated red check.
-
-Found and fixed one real hit setting this up: `pytest 8.4.2` had a known vulnerability
-(`PYSEC-2026-1845`, fixed in `9.0.3`) — `requirements-dev.txt`'s pin widened to
-`pytest>=9.0.3,<10`, full 29-test suite re-verified passing under the new version before
-committing the bump. `requirements.txt` (runtime) had no findings.
-
-## Where things stand
-
-**Phase A (stack & scaffold) — done.** App boots, connects to Postgres via a pooled asyncpg
-connection, `/health` round-trips the DB.
-
-**Phase B (read endpoints) — done.** `GET /products` and `GET /products/{code}/questions`,
-verified live against the local docker Postgres.
-
-**Phase C (quote creation & answer submission) — done.** `POST /quotes` and
-`POST /quotes/{quote_id}/answers`, implemented in `app/quotes.py`. Verified live against the
-local docker Postgres: happy path, all 404/422/400 error paths, answer upsert, and atomic
-rollback on a mixed valid/invalid batch.
-
-**Phase D (evaluation endpoint) — done.** `POST /quotes/{quote_id}/evaluate`, implemented in
-`app/quotes.py`. Verified live against the local docker Postgres: pre-answers evaluate
-(defaults to `accept`), a scenario that fires a real `decline` rule for both `full` and
-`short_circuit`, unknown-quote_id/wrong-token/invalid-strategy error paths, and that
-`quote_evaluation` keeps every run as history (confirmed 3 rows for one quote across the
-above) while `quote_latest_evaluation` surfaces only the newest per strategy.
-
-**Phase E (done).** Quote-ownership token, CORS lockdown, the public-vs-internal auth
-decision (public, confirmed), rate limiting, and consistent error-response shapes are all
-done. See "Security" above. Verified live against the local docker Postgres: 10 rapid
-`POST /quotes` calls from one IP succeed and the 11th gets 429 with the right headers, a
-different `X-Forwarded-For` isn't affected, and CORS headers still land on a 429.
-
-**Phase F (API-level tests) — done.** 32 pytest contract tests in `tests/`, hitting real
-endpoints against a dedicated, freshly-rebuilt `underwriting_test` database. See "Running the
-test suite" above.
-
-**Phase G (admin endpoints) — done, pytest coverage still a gap.** `POST /products`,
-`POST /products/{code}/questions`, `POST /products/{code}/rules`, implemented in
-`app/admin.py`, gated by `X-Admin-Key` (see "Security" above). Verified live against Neon: a
-product/question/rule built purely through these endpoints, then a real quote against that
-product correctly decided `decline`; also covered by the Postman collection's two "Admin"
-folders (see "Testing with Postman" above). Not yet covered by `tests/` — see the gap noted
-under "Running the test suite" above.
-
-Every phase from `uw_plan.md` Part 2 is done, aside from Phase G's missing pytest coverage.
-Beyond the original plan: `/docs`/`/redoc`/`/openapi.json` are now also disabled in prod
-(`EXPOSE_API_DOCS`), a request body size limit (`app/body_limit.py`, 4 of the 32 pytest
-tests above) and structured abuse logging (`app/abuse_log.py`) close two more items from
-`uw_plan.md`'s hardening backlog, and `pip-audit` runs in CI on every push/PR plus weekly
-(caught and fixed a real `pytest` CVE) — see "Security" and "Dependency scanning" above for
-all of it. Only two backlog items remain open: the least-privilege DB role (attempted,
-blocked by a Neon platform limitation — see "DB role note" under "Security"), and
-`app/admin.py`'s missing pytest coverage.

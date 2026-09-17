@@ -30,6 +30,7 @@ def test_evaluate_before_any_answers_defaults_to_accept(
     assert body["outcome"] == "accept"
     assert body["quote_id"] == quote_id
     assert body["strategy"] == "full"
+    assert body["trigger"] is None  # nothing matched - no rule to point to
 
 
 def test_evaluate_decline_rule_fires_under_both_strategies(
@@ -47,6 +48,43 @@ def test_evaluate_decline_rule_fires_under_both_strategies(
     assert full.status_code == short_circuit.status_code == 200
     assert full.json()["outcome"] == "decline"
     assert short_circuit.json()["outcome"] == "decline"
+
+    # 'Smoker with high BMI' isn't flagged stop_evaluation, so both strategies find it via
+    # the same full-evaluation path - short_circuit's trigger falls back to it, unstopped
+    for body in (full.json(), short_circuit.json()):
+        trigger = body["trigger"]
+        assert trigger["rule_name"] == "Smoker with high BMI"
+        assert trigger["question_codes"] == ["Q_SMOKER", "Q_BMI"]
+        assert trigger["stopped_early"] is False
+
+
+def test_evaluate_stop_rule_reports_stopped_early_for_short_circuit(
+    client: TestClient, create_quote: Callable[..., tuple[int, str]]
+) -> None:
+    quote_id, token = create_quote()
+    headers = {"X-Quote-Token": token}
+    client.post(
+        f"/quotes/{quote_id}/answers",
+        headers=headers,
+        json={
+            "answers": [
+                {"question_code": "Q_SMOKER", "answer_text": "false"},
+                {"question_code": "Q_CANCER", "answer_text": "true"},
+            ]
+        },
+    )
+
+    resp = client.post(
+        f"/quotes/{quote_id}/evaluate", headers=headers, json={"strategy": "short_circuit"}
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["outcome"] == "decline"
+    trigger = body["trigger"]
+    assert trigger["rule_name"] == "Cancer history"
+    assert trigger["question_codes"] == ["Q_CANCER"]
+    assert trigger["stopped_early"] is True  # 'Cancer history' is flagged stop_evaluation
 
 
 def test_evaluate_keeps_every_run_as_history(

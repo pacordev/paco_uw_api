@@ -1230,6 +1230,46 @@
               }
             }
           ]
+        },
+        {
+          "name": "List Product Rules",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{admin_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products/{{admin_product_code}}/rules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products",
+                "{{admin_product_code}}",
+                "rules"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('the rule just created shows up', () => {",
+                  "  const names = pm.response.json().map((r) => r.name);",
+                  "  pm.expect(names).to.include('Flag set');",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -1663,6 +1703,108 @@
                   "language": "json"
                 }
               }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Rules: Missing X-Admin-Key -> 422",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/products/{{admin_product_code}}/rules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products",
+                "{{admin_product_code}}",
+                "rules"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Rules: Wrong X-Admin-Key -> 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "not-the-real-key",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products/{{admin_product_code}}/rules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products",
+                "{{admin_product_code}}",
+                "rules"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Rules For Unknown Product -> 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Admin-Key",
+                "value": "{{admin_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/products/PM_DOES_NOT_EXIST/rules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "products",
+                "PM_DOES_NOT_EXIST",
+                "rules"
+              ]
             }
           },
           "response": [],

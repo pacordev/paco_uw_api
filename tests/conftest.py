@@ -36,10 +36,12 @@ SQL_FILES = [
     "phase5_hardening.sql",
     "phase6_seed_data.sql",
     "phase7_quote_access_token.sql",
+    "phase8_evaluation_trigger.sql",
 ]
 
 os.environ["DATABASE_URL"] = TEST_DB_URL
 os.environ["ALLOWED_ORIGINS"] = "http://localhost:3000"
+os.environ["ADMIN_API_KEY"] = "test-admin-key"
 # off by default here - these contract tests fire many requests back-to-back through
 # TestClient, all sharing one IP bucket. test_rate_limiting.py re-enables it for its own
 # assertions and turns it back off afterward, so it doesn't leak into the rest of the suite.

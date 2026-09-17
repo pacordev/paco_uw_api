@@ -1,20 +1,31 @@
-"""Admin endpoints for building the product catalog: products, their questions, and their
-rules. This is the "new product/rule = data change, not a code change" path from a UI
-instead of hand-writing a SQL seed file - same tables, same constraints, just via HTTP.
+"""Admin endpoints for building and reading back the product catalog: products, their
+questions, and their rules. Building is the "new product/rule = data change, not a code
+change" path from a UI instead of hand-writing a SQL seed file - same tables, same
+constraints, just via HTTP.
 
 Unlike the rest of this API (public, unauthenticated, applicant-facing - see app/quotes.py's
 X-Quote-Token model), these endpoints mutate the shared catalog every applicant reads from,
 so anyone who could call them could deface the product list. There's exactly one admin (you),
 not one caller per resource, so a single static key is enough - no need for the per-row
 ownership model the quote endpoints use.
+
+Every route also carries a per-IP @limiter.limit("20/minute") (see app/limiter.py) tighter
+than the app-wide 60/minute default - the admin key is a static shared secret with no
+lockout, so the rate limit is what actually keeps guessing it expensive. Each route takes
+`request`/`response` params for the same reason app/quotes.py's POST routes do: slowapi
+needs a real Request to key the limiter off, and a real Response to attach
+X-RateLimit-*/Retry-After headers to, since these endpoints return Pydantic models rather
+than a Response for FastAPI's response_model to serialize.
 """
 
 import os
+import secrets
 
 import asyncpg
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request, Response
 
 from app import db
+from app.limiter import limiter
 from app.models import (
     ProductCreate,
     ProductOut,
@@ -30,14 +41,21 @@ router = APIRouter()
 
 def _require_admin(x_admin_key: str = Header(..., alias="X-Admin-Key")) -> None:
     # os.environ[...], not .get() with a fallback - a missing ADMIN_API_KEY should fail
-    # loudly (500) rather than silently compare against "" and let an empty header through
-    if x_admin_key != os.environ["ADMIN_API_KEY"]:
+    # loudly (500) rather than silently compare against "" and let an empty header through.
+    # compare_digest instead of != - a plain string comparison short-circuits on the first
+    # mismatched byte, which leaks (very slightly, but measurably over enough requests) how
+    # many leading characters of a guess were correct.
+    if not secrets.compare_digest(x_admin_key, os.environ["ADMIN_API_KEY"]):
         raise HTTPException(status_code=401, detail="Invalid admin key")
 
 
 @router.post("/products", response_model=ProductOut, status_code=201)
+@limiter.limit("20/minute")
 async def create_product(
-    body: ProductCreate, x_admin_key: str = Header(..., alias="X-Admin-Key")
+    request: Request,
+    response: Response,
+    body: ProductCreate,
+    x_admin_key: str = Header(..., alias="X-Admin-Key"),
 ) -> ProductOut:
     _require_admin(x_admin_key)
     pool = db.get_pool()
@@ -57,8 +75,13 @@ async def create_product(
 
 
 @router.post("/products/{code}/questions", response_model=QuestionOut, status_code=201)
+@limiter.limit("20/minute")
 async def add_product_question(
-    code: str, body: QuestionCreate, x_admin_key: str = Header(..., alias="X-Admin-Key")
+    request: Request,
+    response: Response,
+    code: str,
+    body: QuestionCreate,
+    x_admin_key: str = Header(..., alias="X-Admin-Key"),
 ) -> QuestionOut:
     _require_admin(x_admin_key)
     pool = db.get_pool()
@@ -121,8 +144,13 @@ async def add_product_question(
 
 
 @router.post("/products/{code}/rules", response_model=RuleOut, status_code=201)
+@limiter.limit("20/minute")
 async def add_product_rule(
-    code: str, body: RuleCreate, x_admin_key: str = Header(..., alias="X-Admin-Key")
+    request: Request,
+    response: Response,
+    code: str,
+    body: RuleCreate,
+    x_admin_key: str = Header(..., alias="X-Admin-Key"),
 ) -> RuleOut:
     _require_admin(x_admin_key)
     pool = db.get_pool()
@@ -176,3 +204,57 @@ async def add_product_rule(
         stop_evaluation=body.stop_evaluation,
         conditions=[RuleConditionIn(**c.model_dump()) for c in body.conditions],
     )
+
+
+# Admin-only, not on app/products.py's public router, for the same reason
+# product_question.expected_answer is never returned there: a rule's conditions are the
+# exact thresholds that decide an outcome (e.g. "BMI > 32 -> decline"), so handing them to
+# an applicant is effectively handing them the answer key.
+@router.get("/products/{code}/rules", response_model=list[RuleOut])
+@limiter.limit("20/minute")
+async def list_product_rules(
+    request: Request,
+    response: Response,
+    code: str,
+    x_admin_key: str = Header(..., alias="X-Admin-Key"),
+) -> list[RuleOut]:
+    _require_admin(x_admin_key)
+    pool = db.get_pool()
+
+    product = await pool.fetchrow("SELECT id FROM insurance_product WHERE code = $1", code)
+    if product is None:
+        raise HTTPException(status_code=404, detail=f"Unknown product code: {code}")
+
+    rules = await pool.fetch(
+        "SELECT id, name, priority, outcome, stop_evaluation FROM uw_rule "
+        "WHERE product_id = $1 ORDER BY id",
+        product["id"],
+    )
+    conditions = await pool.fetch(
+        """
+        SELECT rc.rule_id, q.code AS question_code, rc.operator, rc.value
+        FROM uw_rule_condition rc
+        JOIN uw_question q ON q.id = rc.question_id
+        WHERE rc.rule_id = ANY($1::int[])
+        ORDER BY rc.id
+        """,
+        [r["id"] for r in rules],
+    )
+    conditions_by_rule: dict[int, list[RuleConditionIn]] = {r["id"]: [] for r in rules}
+    for c in conditions:
+        conditions_by_rule[c["rule_id"]].append(
+            RuleConditionIn(question_code=c["question_code"], operator=c["operator"], value=c["value"])
+        )
+
+    return [
+        RuleOut(
+            id=r["id"],
+            product_code=code,
+            name=r["name"],
+            priority=r["priority"],
+            outcome=r["outcome"],
+            stop_evaluation=r["stop_evaluation"],
+            conditions=conditions_by_rule[r["id"]],
+        )
+        for r in rules
+    ]

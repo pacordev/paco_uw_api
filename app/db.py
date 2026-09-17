@@ -18,11 +18,11 @@ async def connect() -> None:
     database_url = os.environ["DATABASE_URL"]
     # schema is `myins`, not `public` - see sql/phase1_core_schema.sql in the underwritting
     # repo. Sent as a startup-packet param here as a harmless belt-and-suspenders, but the
-    # real guarantee is server-side: `ALTER DATABASE ... SET search_path TO myins` on the
-    # database itself (run once, see uw_plan.md). That's what makes this survive asyncpg's
-    # default RESET ALL on every connection release back to the pool - a client-set search_path
-    # gets wiped by that reset, but the database's own configured default does not. It's also
-    # the only thing that works at all against Neon, whose connection proxy silently drops this
+    # real guarantee is server-side: `ALTER DATABASE ... SET search_path TO myins`, run once
+    # directly on the database itself. That's what makes this survive asyncpg's default
+    # RESET ALL on every connection release back to the pool - a client-set search_path gets
+    # wiped by that reset, but the database's own configured default does not. It's also the
+    # only thing that works at all against Neon, whose connection proxy silently drops this
     # server_settings startup param instead of forwarding it to Postgres.
     _pool = await asyncpg.create_pool(
         database_url, min_size=1, max_size=10, server_settings={"search_path": "myins"}

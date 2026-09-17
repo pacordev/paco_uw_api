@@ -3,7 +3,7 @@ protects against. A public, unauthenticated POST endpoint with no size cap lets 
 an arbitrarily large body and make the app spend memory/CPU parsing it before any of our own
 validation (or even FastAPI's) gets a chance to reject it.
 
-Two layers, both described in uw_plan.md's hardening backlog:
+Two layers:
 1. Content-Length fast path - reject immediately if the client honestly declares an
    oversized body, without reading a single byte of it.
 2. A real backstop that counts bytes as they actually arrive and aborts the moment the

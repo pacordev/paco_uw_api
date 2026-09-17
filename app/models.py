@@ -71,11 +71,23 @@ class EvaluateIn(BaseModel):
     strategy: Strategy
 
 
+class TriggerOut(BaseModel):
+    # which rule decided the outcome, and which answer(s) drove it - from
+    # sql/phase8_evaluation_trigger.sql's uw_evaluation_trigger(), not stored anywhere
+    # (quote_evaluation itself is untouched), just computed alongside the outcome
+    rule_name: str
+    question_codes: list[str]
+    stopped_early: bool
+
+
 class EvaluateOut(BaseModel):
     quote_id: int
     strategy: Strategy
     outcome: Outcome
     evaluated_at: datetime
+    # None when the outcome is the 'accept' default with nothing matched - no rule to
+    # point to
+    trigger: TriggerOut | None = None
 
 
 class ProductCreate(BaseModel):

@@ -34,7 +34,7 @@ the quickest way to confirm the service is up.
 </p>
 
 <p align="center">
-  <a href="diagrams/underwriting-architecture.html">View the full architecture diagram interactively</a>
+  <a href="https://pacordev.github.io/paco_uw_api/diagrams/underwriting-architecture.html">View the full architecture diagram interactively</a>
 </p>
 
 The API is intentionally a thin layer: it translates HTTP requests into calls against the

@@ -1,6 +1,6 @@
 # 🔌 Insurance Underwriting API
 
-A FastAPI service that exposes the [`underwritting`](../underwritting) rules engine over
+A FastAPI service that exposes the [`underwritting`](https://github.com/pacordev/paco_uw) rules engine over
 HTTP, so a frontend or any other client can drive a full insurance quote: pick a product,
 answer its questions, and receive an underwriting decision.
 
